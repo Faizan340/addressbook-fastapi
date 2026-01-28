@@ -1,70 +1,85 @@
-"""
-Database access layer for Address entities.
-Contains all persistence and query logic.
-"""
-
-from sqlalchemy.orm import Session
-from app import models, schemas
+from sqlalchemy.ext.asyncio import AsyncSession
+from typing import List, Optional
+from sqlalchemy import select
+from app.models import Address
+from app.schemas import AddressCreate, AddressUpdate
 from app.utils import calculate_distance_km
 
 
-def create_address(db: Session, data: schemas.AddressCreate):
-    address = models.Address(
-        name=data.name,
-        latitude=data.latitude,
-        longitude=data.longitude,
-    )
+# CREATE (Async)
+async def create_address(
+    db: AsyncSession,
+    data: AddressCreate
+) -> Address:
+    address = Address(**data.dict())
     db.add(address)
-    db.commit()
-    db.refresh(address)
+    await db.commit()
+    await db.refresh(address)
     return address
 
 
-def update_address(db: Session, address_id: int, data: schemas.AddressUpdate):
-    address = db.query(models.Address).filter(models.Address.id == address_id).first()
+# READ / UPDATE / DELETE helpers (Async)
+async def get_address(db: AsyncSession, address_id: int):
+    # Note: .query() is replaced by execute(select(...))
+    result = await db.execute(select(Address).filter(Address.id == address_id))
+    return result.scalars().first()
+
+async def update_address(
+    db: AsyncSession,
+    address_id: int,
+    data: AddressUpdate
+) -> Optional[Address]:
+    result = await db.execute(
+        select(Address).where(Address.id == address_id)
+    )
+    address = result.scalar_one_or_none()
+
     if not address:
         return None
 
-    update_data = data.model_dump(exclude_unset=True)
-    for field, value in update_data.items():
+    for field, value in data.dict(exclude_unset=True).items():
         setattr(address, field, value)
 
-    db.commit()
-    db.refresh(address)
+    await db.commit()
+    await db.refresh(address)
     return address
 
 
-def delete_address(db: Session, address_id: int) -> bool:
-    address = db.query(models.Address).filter(models.Address.id == address_id).first()
+async def delete_address(
+    db: AsyncSession,
+    address_id: int
+) -> bool:
+    result = await db.execute(
+        select(Address).where(Address.id == address_id)
+    )
+    address = result.scalar_one_or_none()
+
     if not address:
         return False
 
-    db.delete(address)
-    db.commit()
+    await db.delete(address)
+    await db.commit()
     return True
 
 
-def get_addresses_within_distance(
-    db: Session,
+# GEOSPATIAL SEARCH (Async)
+async def get_addresses_within_distance(
+    db: AsyncSession,
     latitude: float,
     longitude: float,
-    distance_km: float,
-):
-    addresses = db.query(models.Address).all()
-    results = []
+    distance_km: float
+) -> List[Address]:
 
-    for address in addresses:
-        if address.latitude is None or address.longitude is None:
-            continue
+    result = await db.execute(select(Address))
+    addresses = result.scalars().all()
 
-        distance = calculate_distance_km(
+    return [
+        addr
+        for addr in addresses
+        if calculate_distance_km(
             latitude,
             longitude,
-            address.latitude,
-            address.longitude,
-        )
-
-        if distance <= distance_km:
-            results.append(address)
-
-    return results
+            addr.latitude,
+            addr.longitude
+        ) <= distance_km
+    ]
