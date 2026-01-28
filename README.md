@@ -42,6 +42,7 @@ The application does **not have a GUI**; you can explore and test APIs using Fas
 
 ### 1. Clone and setup
 git clone https://github.com/Faizan340/addressbook-fastapi.git
+
 cd addressbook-fastapi
 
 # Create Virtual Environment
@@ -88,6 +89,7 @@ longitude: -122.4180
 distance_km: 5.0
 
 ----------------------
+
 
 
 
